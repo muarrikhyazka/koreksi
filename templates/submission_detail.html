@@ -33,6 +33,14 @@
   </div>
   {% endif %}
 
+  {% if sub['paddle_text'] %}
+  <h2>Transkripsi PaddleOCR (pembanding)</h2>
+  <div class="card">
+    <p class="muted">Teks mentah dari PaddleOCR (self-hosted, berjalan paralel dengan AI vision di atas). Tidak dipakai untuk penilaian — hanya pembanding bila hasil AI vision terasa meleset.</p>
+    <pre style="white-space:pre-wrap;font-size:.8rem;color:var(--fg-muted);background:var(--btn-bg);padding:.75rem;border-radius:6px">{{ sub['paddle_text'] }}</pre>
+  </div>
+  {% endif %}
+
   <h2>Jawaban per Soal</h2>
   {% for a in answers %}
   <div class="ans-card">

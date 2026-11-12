@@ -66,8 +66,12 @@ def init_db():
             error TEXT DEFAULT '',
             total_score REAL DEFAULT 0,
             max_score REAL DEFAULT 0,
+            paddle_text TEXT DEFAULT '',    -- raw PaddleOCR transcription, informational only
             created_at TEXT NOT NULL
         )''')
+        cols = [r[1] for r in c.execute('PRAGMA table_info(submissions)')]
+        if 'paddle_text' not in cols:
+            c.execute("ALTER TABLE submissions ADD COLUMN paddle_text TEXT DEFAULT ''")
         c.execute('''CREATE TABLE IF NOT EXISTS answers (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             submission_id INTEGER NOT NULL,
@@ -162,6 +166,42 @@ def pdf_to_images(pdf_path, out_dir):
     return [os.path.join(out_dir, p) for p in pages]
 
 
+# ─── PaddleOCR (secondary, side-by-side pass) ───
+# Lazy-loaded singleton: model weights download on first use (~100MB) and
+# init takes a few seconds, so one process-wide instance is reused instead
+# of rebuilding it per request. Runs ALONGSIDE the vision-LLM path above —
+# it does NOT drive grading (PaddleOCR has no notion of "this is question
+# 2's answer", it just reads raw text), it's stored as an audit/cross-check
+# trail a teacher can glance at if the vision-LLM transcription looks off.
+_paddle_engine = None
+
+
+def get_paddle_engine():
+    global _paddle_engine
+    if _paddle_engine is None:
+        from paddleocr import PaddleOCR
+        _paddle_engine = PaddleOCR(use_textline_orientation=True, lang='en', enable_mkldnn=False)
+    return _paddle_engine
+
+
+def paddle_ocr_images(image_paths):
+    """Run PaddleOCR on each page, concatenate recognized lines. Never raises
+    into the caller — OCR audit text is best-effort, grading must not stall
+    on it."""
+    try:
+        engine = get_paddle_engine()
+    except Exception as e:
+        return f'[PaddleOCR unavailable: {e}]'
+    lines = []
+    for path in image_paths:
+        try:
+            for res in engine.predict(path):
+                lines.extend(res.get('rec_texts') or [])
+        except Exception as e:
+            lines.append(f'[page OCR failed: {e}]')
+    return '\n'.join(lines)
+
+
 # ─── Grading ───
 def ocr_submission(image_paths, questions):
     """One vision call: transcribe student name + every question's answer."""
@@ -232,6 +272,8 @@ def process_submission(sub_id, exam_id, image_paths):
                       (f'OCR failed: {e}', sub_id))
         return
 
+    paddle_text = paddle_ocr_images(image_paths)
+
     student_name = str(ocr.get('student_name') or '').strip()
     by_q = {int(a.get('q')): str(a.get('answer') or '') for a in ocr.get('answers', []) if a.get('q') is not None}
 
@@ -252,8 +294,8 @@ def process_submission(sub_id, exam_id, image_paths):
             (submission_id, question_number, student_answer, score, max_score, feedback, graded_by)
             VALUES (?,?,?,?,?,?,?)''', rows)
         c.execute('''UPDATE submissions SET student_name=?, status='graded',
-                     total_score=?, max_score=?, error='' WHERE id=?''',
-                  (student_name, total, maxtot, sub_id))
+                     total_score=?, max_score=?, error='', paddle_text=? WHERE id=?''',
+                  (student_name, total, maxtot, paddle_text, sub_id))
 
 
 # ─── Routes: exams ───
