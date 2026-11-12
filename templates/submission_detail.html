@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<base href="{{ prefix }}/">
+<title>{{ sub['student_name'] or sub['filename'] }} — Koreksi</title>
+<link rel="stylesheet" href="static/css/style.css?v=1">
+<script src="static/js/icons.js?v=1"></script>
+</head>
+<body>
+<header>
+  <a href="{{ prefix }}/" class="brand"><span id="brand-icon"></span> Koreksi</a>
+  <button class="theme-toggle" onclick="toggleTheme()" id="theme-btn"></button>
+</header>
+<main>
+  <p class="muted"><a href="{{ prefix }}/exam/{{ exam['id'] }}">← {{ exam['name'] }}</a></p>
+  <h1>{{ sub['student_name'] or '(nama tidak terbaca)' }}</h1>
+  <p class="muted">File: {{ sub['filename'] }} · Status:
+    <span class="badge {{ sub['status'] }}">{{ {'graded':'Terkoreksi','pending':'Menunggu','ocr_failed':'Gagal OCR'}[sub['status']] }}</span>
+    {% if sub['status']=='graded' %}
+    · Total: <strong>{{ sub['total_score']|round(1) }}/{{ sub['max_score']|round(1) }}</strong>
+    {% endif %}
+  </p>
+  {% if sub['error'] %}<div class="card" style="border-color:var(--red);color:var(--red)">{{ sub['error'] }}</div>{% endif %}
+
+  {% if images %}
+  <h2>Lembar Jawaban (sumber)</h2>
+  <div class="img-strip">
+    {% for img in images %}
+    <a href="{{ prefix }}/uploads/{{ img }}" target="_blank"><img src="{{ prefix }}/uploads/{{ img }}"></a>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  <h2>Jawaban per Soal</h2>
+  {% for a in answers %}
+  <div class="ans-card">
+    <div class="head">
+      <strong>Soal {{ a['question_number'] }}</strong>
+      <span class="badge {{ a['type'] }}">{{ 'Pilihan Ganda' if a['type']=='mc' else 'Esai' }}</span>
+    </div>
+    {% if a['prompt'] %}<p class="muted">{{ a['prompt'] }}</p>{% endif %}
+    <form method="POST" action="{{ prefix }}/exam/{{ exam['id'] }}/submission/{{ sub['id'] }}/override">
+      <input type="hidden" name="question_number" value="{{ a['question_number'] }}">
+      <label>Jawaban terbaca (OCR) — bisa dikoreksi manual</label>
+      <textarea name="student_answer" rows="2">{{ a['student_answer'] }}</textarea>
+      <p class="muted" style="margin-top:.4rem">
+        {% if a['type']=='mc' %}Kunci: {{ a['correct_answer'] }}{% else %}Jawaban model: {{ a['model_answer'] }}{% endif %}
+        {% if a['feedback'] %}· Catatan AI: {{ a['feedback'] }}{% endif %}
+        {% if a['graded_by']=='manual' %}· <span style="color:var(--amber)">dinilai manual</span>{% endif %}
+      </p>
+      <div style="display:flex;gap:.6rem;align-items:center;margin-top:.5rem">
+        <label style="margin:0">Skor:</label>
+        <input type="number" class="score-input" name="score" value="{{ a['score'] }}" step="0.5" min="0" max="{{ a['max_score'] }}">
+        <span class="muted">/ {{ a['max_score'] }}</span>
+        <button type="submit" class="btn-sm">{{ '' }}<span class="save-icon"></span> Simpan</button>
+      </div>
+    </form>
+  </div>
+  {% endfor %}
+
+  <form method="POST" action="{{ prefix }}/exam/{{ exam['id'] }}/submission/{{ sub['id'] }}/delete"
+        onsubmit="return confirm('Hapus lembar jawaban ini?')" style="margin-top:1rem">
+    <button type="submit" class="btn-danger">{{ '' }}<span class="del-icon"></span> Hapus Submission</button>
+  </form>
+</main>
+<footer><p>Koreksi · OCR + auto-grading jawaban tulisan tangan</p></footer>
+<script>
+document.getElementById('brand-icon').innerHTML = window.ICON('book-open');
+document.querySelectorAll('.save-icon').forEach(e=>e.innerHTML=window.ICON('check'));
+document.querySelectorAll('.del-icon').forEach(e=>e.innerHTML=window.ICON('trash'));
+(function(){
+  const KEY='koreksi_theme';
+  function apply(t){document.body.classList.toggle('dark', t==='dark');
+    document.getElementById('theme-btn').innerHTML = window.ICON(t==='dark'?'sun':'moon');}
+  apply(localStorage.getItem(KEY)==='dark' ? 'dark':'light');
+  window.toggleTheme = function(){const n=document.body.classList.contains('dark')?'light':'dark';localStorage.setItem(KEY,n);apply(n);};
+})();
+</script>
+</body>
+</html>

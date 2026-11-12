@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<base href="{{ prefix }}/">
+<title>{{ exam['name'] }} — Koreksi</title>
+<link rel="stylesheet" href="static/css/style.css?v=1">
+<script src="static/js/icons.js?v=1"></script>
+</head>
+<body>
+<header>
+  <a href="{{ prefix }}/" class="brand"><span id="brand-icon"></span> Koreksi</a>
+  <button class="theme-toggle" onclick="toggleTheme()" id="theme-btn"></button>
+</header>
+<main>
+  <p class="muted"><a href="{{ prefix }}/">← Semua ujian</a></p>
+  <h1>{{ exam['name'] }}</h1>
+
+  <h2>1. Soal ({{ questions|length }})</h2>
+  <div class="card">
+    {% if questions %}
+    <div class="q-list" style="margin-bottom:1rem">
+      {% for q in questions %}
+      <div class="q-row">
+        <div class="num">{{ q['number'] }}.</div>
+        <div class="body">
+          <div class="prompt">
+            <span class="badge {{ q['type'] }}">{{ 'Pilihan Ganda' if q['type']=='mc' else 'Esai' }}</span>
+            &nbsp;{{ q['prompt'] or '(tanpa teks soal)' }}
+          </div>
+          <div class="muted">
+            {% if q['type']=='mc' %}
+              Kunci: <strong>{{ q['correct_answer'] }}</strong>
+            {% else %}
+              Jawaban model: {{ q['model_answer'] }}
+            {% endif %}
+            &nbsp;· Skor maks: {{ q['max_score'] }}
+          </div>
+        </div>
+        <form method="POST" action="{{ prefix }}/exam/{{ exam['id'] }}/question/{{ q['id'] }}/delete"
+              onsubmit="return confirm('Hapus soal {{ q['number'] }}?')">
+          <button type="submit" class="btn-sm btn-danger" title="Hapus soal">{{ '' }}<span class="del-icon"></span></button>
+        </form>
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <p class="muted">Belum ada soal. Tambahkan di bawah.</p>
+    {% endif %}
+
+    <form method="POST" action="{{ prefix }}/exam/{{ exam['id'] }}/question/add" id="qform">
+      <div class="row">
+        <div>
+          <label>Tipe soal</label>
+          <select name="type" id="qtype" onchange="toggleQType()">
+            <option value="mc">Pilihan Ganda</option>
+            <option value="essay">Esai</option>
+          </select>
+        </div>
+        <div>
+          <label>Skor maksimal</label>
+          <input type="number" name="max_score" value="1" min="0" step="0.5">
+        </div>
+      </div>
+      <label>Teks soal (opsional, membantu penilaian esai)</label>
+      <textarea name="prompt" rows="2" placeholder="contoh: Jelaskan proses fotosintesis."></textarea>
+
+      <div id="mc-fields">
+        <label>Kunci jawaban (contoh: B)</label>
+        <input type="text" name="correct_answer" placeholder="B">
+      </div>
+      <div id="essay-fields" style="display:none">
+        <label>Jawaban model / poin rubrik (dipakai AI untuk menilai)</label>
+        <textarea name="model_answer" rows="3" placeholder="contoh: Fotosintesis mengubah cahaya matahari menjadi energi kimia dengan bantuan klorofil, menghasilkan oksigen dan glukosa."></textarea>
+      </div>
+      <button type="submit" class="btn-primary" style="margin-top:.75rem" id="addq-btn"></button>
+    </form>
+  </div>
+
+  <h2>2. Unggah Lembar Jawaban</h2>
+  <div class="card">
+    <p class="muted">Bisa unggah banyak file sekaligus (satu file = satu siswa). Gambar, PDF (multi-halaman didukung), atau foto langsung dari kamera HP.</p>
+    <div class="dropzone" id="dropzone" onclick="document.getElementById('fileinput').click()">
+      <div id="dz-icon" style="font-size:1.8rem"></div>
+      <div>Klik untuk pilih file, atau seret & lepas di sini</div>
+      <div class="muted">JPG, PNG, atau PDF — bisa pilih beberapa sekaligus</div>
+      <input type="file" id="fileinput" multiple accept="image/*,.pdf" capture="environment">
+    </div>
+    <div style="margin-top:.75rem;display:flex;gap:.6rem">
+      <button type="button" onclick="document.getElementById('fileinput').click()" id="pick-btn"></button>
+      <button type="button" id="grade-btn" onclick="startUpload()" disabled></button>
+    </div>
+    <div id="picked-list" class="muted" style="margin-top:.5rem"></div>
+    <div id="upload-log" class="upload-log"></div>
+  </div>
+
+  <h2>3. Hasil ({{ submissions|length }})</h2>
+  <div class="card">
+    {% if submissions %}
+    <div style="display:flex;justify-content:flex-end;margin-bottom:.6rem">
+      <a href="{{ prefix }}/exam/{{ exam['id'] }}/export.csv"><button class="btn-sm" id="export-btn"></button></a>
+    </div>
+    <table class="sub-table">
+      <thead><tr><th>Siswa</th><th>File</th><th>Status</th><th>Skor</th><th></th></tr></thead>
+      <tbody>
+      {% for s in submissions %}
+        {% set pct = (100*s['total_score']/s['max_score'])|round(1) if s['max_score'] else 0 %}
+        <tr onclick="location.href='{{ prefix }}/exam/{{ exam['id'] }}/submission/{{ s['id'] }}'" style="cursor:pointer">
+          <td>{{ s['student_name'] or '(belum terbaca)' }}</td>
+          <td>{{ s['filename'] }}</td>
+          <td><span class="badge {{ s['status'] }}">
+            {{ {'graded':'Terkoreksi','pending':'Menunggu','ocr_failed':'Gagal OCR'}[s['status']] }}
+          </span></td>
+          <td>
+            {% if s['status']=='graded' %}
+            <span class="score-pct {{ 'high' if pct>=80 else ('mid' if pct>=60 else 'low') }}">{{ s['total_score']|round(1) }}/{{ s['max_score']|round(1) }} ({{ pct }}%)</span>
+            {% else %}
+            <span class="muted">{{ s['error'] or '—' }}</span>
+            {% endif %}
+          </td>
+          <td><span class="chev"></span></td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p class="muted">Belum ada lembar jawaban diunggah.</p>
+    {% endif %}
+  </div>
+</main>
+<footer><p>Koreksi · OCR + auto-grading jawaban tulisan tangan</p></footer>
+
+<script>
+document.getElementById('brand-icon').innerHTML = window.ICON('book-open');
+document.getElementById('addq-btn').innerHTML = window.ICON('plus') + ' Tambah Soal';
+document.getElementById('pick-btn').innerHTML = window.ICON('upload') + ' Pilih File';
+document.getElementById('grade-btn').innerHTML = window.ICON('check') + ' Koreksi Semua';
+document.getElementById('export-btn').innerHTML = window.ICON('download') + ' Export CSV';
+document.getElementById('dz-icon').innerHTML = window.ICON('upload');
+document.querySelectorAll('.del-icon').forEach(e=>e.innerHTML=window.ICON('trash'));
+document.querySelectorAll('.chev').forEach(e=>e.innerHTML=window.ICON('chevron-right'));
+
+function toggleQType(){
+  const t = document.getElementById('qtype').value;
+  document.getElementById('mc-fields').style.display = t==='mc' ? '' : 'none';
+  document.getElementById('essay-fields').style.display = t==='essay' ? '' : 'none';
+}
+
+const EXAM_ID = {{ exam['id'] }};
+const PREFIX = "{{ prefix }}";
+let pickedFiles = [];
+
+const dz = document.getElementById('dropzone');
+const fi = document.getElementById('fileinput');
+fi.addEventListener('change', () => setFiles([...fi.files]));
+['dragover','dragenter'].forEach(ev => dz.addEventListener(ev, e => { e.preventDefault(); dz.classList.add('drag'); }));
+['dragleave','dragend','drop'].forEach(ev => dz.addEventListener(ev, e => { e.preventDefault(); dz.classList.remove('drag'); }));
+dz.addEventListener('drop', e => setFiles([...e.dataTransfer.files]));
+
+function setFiles(files){
+  pickedFiles = files;
+  const list = document.getElementById('picked-list');
+  list.textContent = files.length ? `${files.length} file dipilih: ` + files.map(f=>f.name).join(', ') : '';
+  document.getElementById('grade-btn').disabled = files.length === 0;
+}
+
+async function startUpload(){
+  if (!pickedFiles.length) return;
+  const btn = document.getElementById('grade-btn');
+  btn.disabled = true;
+  btn.innerHTML = window.ICON('clock') + ` Mengoreksi ${pickedFiles.length} berkas…`;
+  const log = document.getElementById('upload-log');
+  log.innerHTML = '';
+
+  const fd = new FormData();
+  pickedFiles.forEach(f => fd.append('files', f));
+
+  try {
+    const res = await fetch(`${PREFIX}/exam/${EXAM_ID}/upload`, { method: 'POST', body: fd });
+    const data = await res.json();
+    (data.results || []).forEach(r => {
+      const div = document.createElement('div');
+      div.className = 'item ' + (r.ok ? 'ok' : 'fail');
+      if (r.ok) {
+        const pct = r.max_score ? Math.round(100*r.total_score/r.max_score) : 0;
+        div.innerHTML = `${window.ICON('check')} ${r.filename} — ${r.student_name || '(nama tidak terbaca)'}: ${r.total_score}/${r.max_score} (${pct}%)`;
+      } else {
+        div.innerHTML = `${window.ICON('alert')} ${r.filename} — ${r.error || 'gagal'}`;
+      }
+      log.appendChild(div);
+    });
+  } catch (e) {
+    log.innerHTML = `<div class="item fail">${window.ICON('alert')} Upload gagal: ${e}</div>`;
+  }
+
+  btn.innerHTML = window.ICON('check') + ' Koreksi Semua';
+  setTimeout(() => location.reload(), 1200);
+}
+
+(function(){
+  const KEY='koreksi_theme';
+  function apply(t){document.body.classList.toggle('dark', t==='dark');
+    document.getElementById('theme-btn').innerHTML = window.ICON(t==='dark'?'sun':'moon');}
+  apply(localStorage.getItem(KEY)==='dark' ? 'dark':'light');
+  window.toggleTheme = function(){const n=document.body.classList.contains('dark')?'light':'dark';localStorage.setItem(KEY,n);apply(n);};
+})();
+</script>
+</body>
+</html>

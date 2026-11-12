@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<base href="{{ prefix }}/">
+<title>Ujian Baru — Koreksi</title>
+<link rel="stylesheet" href="static/css/style.css?v=1">
+<script src="static/js/icons.js?v=1"></script>
+</head>
+<body>
+<header>
+  <a href="{{ prefix }}/" class="brand"><span id="brand-icon"></span> Koreksi</a>
+  <button class="theme-toggle" onclick="toggleTheme()" id="theme-btn"></button>
+</header>
+<main>
+  <h1>Ujian Baru</h1>
+  <p class="muted">Beri nama ujian dulu — soal (pilihan ganda/esai) ditambahkan di langkah berikutnya.</p>
+  <div class="card">
+    <form method="POST" action="{{ prefix }}/exam/new">
+      <label for="name">Nama ujian</label>
+      <input type="text" id="name" name="name" placeholder="contoh: Ulangan Harian IPA — Bab 3" required autofocus>
+      <div style="margin-top:1rem;display:flex;gap:.6rem">
+        <button type="submit" class="btn-primary" id="submit-btn"></button>
+        <a href="{{ prefix }}/"><button type="button">Batal</button></a>
+      </div>
+    </form>
+  </div>
+</main>
+<footer><p>Koreksi · OCR + auto-grading jawaban tulisan tangan</p></footer>
+<script>
+document.getElementById('brand-icon').innerHTML = window.ICON('book-open');
+document.getElementById('submit-btn').innerHTML = window.ICON('check') + ' Buat & Lanjut';
+(function(){
+  const KEY='koreksi_theme';
+  function apply(t){document.body.classList.toggle('dark', t==='dark');
+    document.getElementById('theme-btn').innerHTML = window.ICON(t==='dark'?'sun':'moon');}
+  apply(localStorage.getItem(KEY)==='dark' ? 'dark':'light');
+  window.toggleTheme = function(){const n=document.body.classList.contains('dark')?'light':'dark';localStorage.setItem(KEY,n);apply(n);};
+})();
+</script>
+</body>
+</html>
