@@ -54,8 +54,12 @@ def init_db():
             choices TEXT DEFAULT '',       -- mc: "A) ...|B) ...|..." free text, informational only
             correct_answer TEXT DEFAULT '',-- mc: letter/short answer
             model_answer TEXT DEFAULT '',  -- essay: ideal answer / rubric points
-            max_score REAL NOT NULL DEFAULT 1
+            max_score REAL NOT NULL DEFAULT 1,
+            parent_number INTEGER           -- optional: groups sub-questions under a parent (e.g. reading passage)
         )''')
+        qcols = [r[1] for r in c.execute('PRAGMA table_info(questions)')]
+        if 'parent_number' not in qcols:
+            c.execute('ALTER TABLE questions ADD COLUMN parent_number INTEGER')
         c.execute('''CREATE TABLE IF NOT EXISTS submissions (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             exam_id INTEGER NOT NULL,
@@ -337,13 +341,19 @@ def question_add(eid):
     f = request.form
     qtype = f.get('type', 'mc')
     with db() as c:
-        nxt = c.execute('SELECT COALESCE(MAX(number),0)+1 FROM questions WHERE exam_id=?', (eid,)).fetchone()[0]
+        manual_num = (f.get('number') or '').strip()
+        if manual_num:
+            number = int(manual_num)
+        else:
+            number = c.execute('SELECT COALESCE(MAX(number),0)+1 FROM questions WHERE exam_id=?', (eid,)).fetchone()[0]
+        parent_raw = (f.get('parent_number') or '').strip()
+        parent_number = int(parent_raw) if parent_raw else None
         c.execute('''INSERT INTO questions
-            (exam_id, number, type, prompt, choices, correct_answer, model_answer, max_score)
-            VALUES (?,?,?,?,?,?,?,?)''',
-            (eid, nxt, qtype, f.get('prompt', ''), f.get('choices', ''),
+            (exam_id, number, type, prompt, choices, correct_answer, model_answer, max_score, parent_number)
+            VALUES (?,?,?,?,?,?,?,?,?)''',
+            (eid, number, qtype, f.get('prompt', ''), f.get('choices', ''),
              f.get('correct_answer', '').strip(), f.get('model_answer', ''),
-             float(f.get('max_score') or 1)))
+             float(f.get('max_score') or 1), parent_number))
     return redirect(f'{PREFIX}/exam/{eid}')
 
 
@@ -352,6 +362,20 @@ def question_delete(eid, qid):
     with db() as c:
         c.execute('DELETE FROM questions WHERE id=? AND exam_id=?', (qid, eid))
     return redirect(f'{PREFIX}/exam/{eid}')
+
+
+@app.route('/exam/<int:eid>/delete', methods=['POST'])
+def exam_delete(eid):
+    with db() as c:
+        sub_ids = [r[0] for r in c.execute('SELECT id FROM submissions WHERE exam_id=?', (eid,)).fetchall()]
+        if sub_ids:
+            c.executemany('DELETE FROM answers WHERE submission_id=?', [(sid,) for sid in sub_ids])
+        c.execute('DELETE FROM submissions WHERE exam_id=?', (eid,))
+        c.execute('DELETE FROM questions WHERE exam_id=?', (eid,))
+        c.execute('DELETE FROM exams WHERE id=?', (eid,))
+    import shutil
+    shutil.rmtree(os.path.join(UPLOAD_DIR, str(eid)), ignore_errors=True)
+    return redirect(f'{PREFIX}/')
 
 
 # ─── Routes: submissions (batch upload = "run multiple") ───

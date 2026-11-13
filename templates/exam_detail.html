@@ -15,7 +15,13 @@
 </header>
 <main>
   <p class="muted"><a href="{{ prefix }}/">← Semua ujian</a></p>
-  <h1>{{ exam['name'] }}</h1>
+  <div style="display:flex;justify-content:space-between;align-items:center">
+    <h1>{{ exam['name'] }}</h1>
+    <form method="POST" action="{{ prefix }}/exam/{{ exam['id'] }}/delete"
+          onsubmit="return confirm('Hapus ujian \'{{ exam['name'] }}\' beserta semua soal dan hasil koreksi? Tidak bisa dibatalkan.')">
+      <button type="submit" class="btn-danger btn-sm" title="Hapus ujian ini"><span class="del-icon"></span> Hapus Ujian</button>
+    </form>
+  </div>
 
   <h2>1. Soal ({{ questions|length }})</h2>
   <div class="card">
@@ -23,10 +29,11 @@
     <div class="q-list" style="margin-bottom:1rem">
       {% for q in questions %}
       <div class="q-row">
-        <div class="num">{{ q['number'] }}.</div>
+        <div class="num">{{ (q['parent_number']|string + '.') if q['parent_number'] else '' }}{{ q['number'] }}.</div>
         <div class="body">
           <div class="prompt">
             <span class="badge {{ q['type'] }}">{{ 'Pilihan Ganda' if q['type']=='mc' else 'Esai' }}</span>
+            {% if q['parent_number'] %}<span class="badge" style="background:var(--btn-bg);color:var(--fg-muted)">Induk: {{ q['parent_number'] }}</span>{% endif %}
             &nbsp;{{ q['prompt'] or '(tanpa teks soal)' }}
           </div>
           <div class="muted">
@@ -40,7 +47,7 @@
         </div>
         <form method="POST" action="{{ prefix }}/exam/{{ exam['id'] }}/question/{{ q['id'] }}/delete"
               onsubmit="return confirm('Hapus soal {{ q['number'] }}?')">
-          <button type="submit" class="btn-sm btn-danger" title="Hapus soal">{{ '' }}<span class="del-icon"></span></button>
+          <button type="submit" class="btn-sm btn-danger" title="Hapus soal"><span class="del-icon"></span> Hapus</button>
         </form>
       </div>
       {% endfor %}
@@ -50,6 +57,16 @@
     {% endif %}
 
     <form method="POST" action="{{ prefix }}/exam/{{ exam['id'] }}/question/add" id="qform">
+      <div class="row">
+        <div>
+          <label>Nomor soal (kosongkan untuk otomatis)</label>
+          <input type="number" name="number" min="1" step="1" placeholder="otomatis">
+        </div>
+        <div>
+          <label>Nomor induk (opsional — untuk sub-soal dari 1 wacana)</label>
+          <input type="number" name="parent_number" min="1" step="1" placeholder="contoh: 1">
+        </div>
+      </div>
       <div class="row">
         <div>
           <label>Tipe soal</label>
@@ -85,9 +102,11 @@
       <div id="dz-icon" style="font-size:1.8rem"></div>
       <div>Klik untuk pilih file, atau seret & lepas di sini</div>
       <div class="muted">JPG, PNG, atau PDF — bisa pilih beberapa sekaligus</div>
-      <input type="file" id="fileinput" multiple accept="image/*,.pdf" capture="environment">
+      <input type="file" id="fileinput" multiple accept="image/*,.pdf">
+      <input type="file" id="camerainput" accept="image/*" capture="environment" style="display:none">
     </div>
-    <div style="margin-top:.75rem;display:flex;gap:.6rem">
+    <div style="margin-top:.75rem;display:flex;gap:.6rem;flex-wrap:wrap">
+      <button type="button" onclick="document.getElementById('camerainput').click()" id="camera-btn"></button>
       <button type="button" onclick="document.getElementById('fileinput').click()" id="pick-btn"></button>
       <button type="button" id="grade-btn" onclick="startUpload()" disabled></button>
     </div>
@@ -134,6 +153,7 @@
 <script>
 document.getElementById('brand-icon').innerHTML = window.ICON('book-open');
 document.getElementById('addq-btn').innerHTML = window.ICON('plus') + ' Tambah Soal';
+document.getElementById('camera-btn').innerHTML = window.ICON('camera') + ' Ambil Foto';
 document.getElementById('pick-btn').innerHTML = window.ICON('upload') + ' Pilih File';
 document.getElementById('grade-btn').innerHTML = window.ICON('check') + ' Koreksi Semua';
 document.getElementById('export-btn').innerHTML = window.ICON('download') + ' Export CSV';
@@ -153,16 +173,29 @@ let pickedFiles = [];
 
 const dz = document.getElementById('dropzone');
 const fi = document.getElementById('fileinput');
+const ci = document.getElementById('camerainput');
 fi.addEventListener('change', () => setFiles([...fi.files]));
+ci.addEventListener('change', () => { addFiles([...ci.files]); ci.value = ''; });
 ['dragover','dragenter'].forEach(ev => dz.addEventListener(ev, e => { e.preventDefault(); dz.classList.add('drag'); }));
 ['dragleave','dragend','drop'].forEach(ev => dz.addEventListener(ev, e => { e.preventDefault(); dz.classList.remove('drag'); }));
 dz.addEventListener('drop', e => setFiles([...e.dataTransfer.files]));
 
 function setFiles(files){
   pickedFiles = files;
+  renderPicked();
+}
+
+function addFiles(files){
+  // Camera shots accumulate (one photo per tap) instead of replacing the
+  // batch — teacher can snap several students' sheets in a row.
+  pickedFiles = pickedFiles.concat(files);
+  renderPicked();
+}
+
+function renderPicked(){
   const list = document.getElementById('picked-list');
-  list.textContent = files.length ? `${files.length} file dipilih: ` + files.map(f=>f.name).join(', ') : '';
-  document.getElementById('grade-btn').disabled = files.length === 0;
+  list.textContent = pickedFiles.length ? `${pickedFiles.length} file dipilih: ` + pickedFiles.map(f=>f.name).join(', ') : '';
+  document.getElementById('grade-btn').disabled = pickedFiles.length === 0;
 }
 
 async function startUpload(){
